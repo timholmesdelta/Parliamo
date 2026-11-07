@@ -378,9 +378,12 @@ function startConversation(){
 // stops it) until Tim taps the mic again, or an optional long silence passes.
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const isAndroid=/Android/i.test(navigator.userAgent);
-let rec=null, listening=false, finalText="", interim="", lastHeard=0, pauseTimer=null;
+let discarding=false, rec=null, listening=false, finalText="", interim="", lastHeard=0, pauseTimer=null;
 function setMic(on){
   listening=on; $("mic").classList.toggle("on",on);
+  // While listening, the ? button becomes ✕ (discard and start again)
+  $("btnHint").textContent = on ? "✕" : "?";
+  $("btnHint").title = on ? "Start again" : "Help me say something";
   clearInterval(pauseTimer); pauseTimer=null;
   if(!on) $("live").textContent="";
 }
@@ -407,7 +410,8 @@ function makeRec(){
   r.onend=()=>{
     if(!listening) return;
     // Browser stopped on a pause: keep what was half-heard and carry on listening.
-    if(interim){ finalText=(finalText+" "+interim).trim(); interim=""; }
+    if(discarding){ discarding=false; finalText=""; interim=""; showLive(); }
+    else if(interim){ finalText=(finalText+" "+interim).trim(); interim=""; }
     setTimeout(()=>{ if(listening){ try{ r.start(); }catch{} } },150);
   };
   return r;
@@ -437,7 +441,13 @@ $("mic").onclick=()=>{
 $("btnType").onclick=()=>{ $("typebar").classList.toggle("open"); if($("typebar").classList.contains("open")) $("typed").focus(); };
 $("sendTyped").onclick=()=>{ const t=$("typed").value; $("typed").value=""; send(t); };
 $("typed").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); $("sendTyped").click(); } };
-$("btnHint").onclick=()=>{ if(convo.length) send("(In English) I'm not sure how to answer. Give me an example answer I could say in Italian, then ask me again."); };
+$("btnHint").onclick=()=>{
+  if(listening){ // start again: drop what's been heard, keep listening
+    finalText=""; interim=""; lastHeard=Date.now(); discarding=true; showLive();
+    try{ rec.abort(); }catch{ discarding=false; }
+    return;
+  }
+  if(convo.length) send("(In English) I'm not sure how to answer. Give me an example answer I could say in Italian, then ask me again."); };
 
 /* ---------- boot ---------- */
 loadSettingsUI();
