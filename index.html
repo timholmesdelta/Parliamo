@@ -143,7 +143,12 @@
     <select id="voice"></select>
 
     <div class="check"><input type="checkbox" id="autoSpeak" checked><span>Speak replies automatically</span></div>
-    <div class="check"><input type="checkbox" id="autoSend" checked><span>Send as soon as I stop talking</span></div>
+    <label for="pauseSend">When to send what I say</label>
+    <select id="pauseSend">
+      <option value="0">When I tap the mic again (recommended)</option>
+      <option value="4">After 4 seconds of silence</option>
+      <option value="7">After 7 seconds of silence</option>
+    </select>
 
     <div class="btnrow">
       <button class="ghost" id="btnNew">New conversation</button>
@@ -166,7 +171,7 @@ const S = {
   scenario: store.get("scenario","Free chat – getting to know each other"),
   customScenario: store.get("customScenario",""), model: store.get("model","claude-sonnet-5-5"),
   rate: store.get("rate",0.9), voice: store.get("voice",""),
-  autoSpeak: store.get("autoSpeak",true), autoSend: store.get("autoSend",true), showEn: store.get("showEn",false)
+  autoSpeak: store.get("autoSpeak",true), pauseSend: store.get("pauseSend",0), showEn: store.get("showEn",false)
 };
 function loadSettingsUI(){
   $("apiKey").value=S.apiKey; $("level").value=S.level; $("model").value=S.model;
@@ -174,7 +179,7 @@ function loadSettingsUI(){
   $("customScenario").value=S.customScenario;
   $("customScenario").style.display = $("scenario").value==="custom" ? "block" : "none";
   $("rate").value=S.rate; $("rateVal").textContent=S.rate+"×";
-  $("autoSpeak").checked=S.autoSpeak; $("autoSend").checked=S.autoSend;
+  $("autoSpeak").checked=S.autoSpeak; $("pauseSend").value=String(S.pauseSend);
   $("hdrLevel").textContent="· "+S.level;
   document.body.classList.toggle("show-en", S.showEn);
 }
@@ -182,7 +187,7 @@ function saveSettingsUI(){
   S.apiKey=$("apiKey").value.trim(); S.level=$("level").value; S.model=$("model").value;
   S.scenario=$("scenario").value; S.customScenario=$("customScenario").value.trim();
   S.rate=parseFloat($("rate").value); S.voice=$("voice").value;
-  S.autoSpeak=$("autoSpeak").checked; S.autoSend=$("autoSend").checked;
+  S.autoSpeak=$("autoSpeak").checked; S.pauseSend=parseInt($("pauseSend").value,10)||0;
   for(const k of Object.keys(S)) store.set(k,S[k]);
   $("hdrLevel").textContent="· "+S.level;
 }
@@ -265,25 +270,23 @@ Practice scenario: ${scenarioText()}. Play the other person in the scenario natu
 
 Each learner message is an automatic speech-recognition transcript of Tim speaking Italian. Ignore punctuation and capitalisation. Recognition may mishear: if a word looks like a mis-hearing of a similar Italian word, assume he meant the plausible word, and mention it under "pronunciation" as a likely pronunciation issue with a short hint on how to say it.
 
-Reply ONLY with a single JSON object, no markdown, in exactly this shape:
-{"reply": "your spoken reply in Italian: 1-3 short sentences pitched at ${S.level}, natural spoken Italian, usually ending with a question so he keeps talking. Never put corrections in here.",
- "translation": "English translation of reply",
- "corrections": [{"original": "what he said", "corrected": "correct Italian", "explanation": "short, plain-English reason (grammar, gender, verb form, word choice)"}],
- "better_version": "how a native speaker would naturally say his whole message, or empty string if it was already natural",
- "pronunciation": "likely pronunciation issue and hint, or empty string",
- "praise": "a few words of specific praise if he used something well, else empty string",
- "vocab": [{"it": "word or phrase", "en": "meaning"}]}
+Always answer by calling the tutor_turn tool, never with plain text. "reply" is your spoken Italian: 1-3 short sentences pitched at ${S.level}, usually ending with a question so he keeps talking, and never containing corrections.
 
 Rules: corrections only for real errors (max 3, most important first); empty array if none. vocab: up to 3 words from your reply that may be new at his level. If he speaks English or is stuck, give the Italian he needs inside "better_version", then continue in Italian. For the first turn (message "[START]") there is nothing to correct: just open the scenario in character.`;
 }
 async function callClaude(userText){
   if(!S.apiKey){ addSys("Add your Anthropic API key in Settings ⚙︎ to start.",true); $("btnSettings").click(); return null; }
-  convo.push({role:"user",content:userText});
+  // After a tool_use turn the API needs a tool_result before the next user text.
+  const content = lastToolId
+    ? [{type:"tool_result",tool_use_id:lastToolId,content:"shown to learner"},{type:"text",text:userText}]
+    : userText;
+  convo.push({role:"user",content});
   const res=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"content-type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01",
              "anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:S.model,max_tokens:900,system:systemPrompt(),messages:convo})
+    body:JSON.stringify({model:S.model,max_tokens:1500,system:systemPrompt(),messages:convo,
+      tools:[TUTOR_TOOL],tool_choice:{type:"tool",name:"tutor_turn"}})
   });
   if(!res.ok){
     convo.pop();
@@ -292,13 +295,35 @@ async function callClaude(userText){
     throw new Error(msg);
   }
   const j=await res.json();
-  const raw=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("");
-  convo.push({role:"assistant",content:raw});
-  return parseReply(raw);
+  const blocks=j.content||[];
+  convo.push({role:"assistant",content:blocks});
+  const tu=blocks.find(c=>c.type==="tool_use");
+  lastToolId = tu ? tu.id : null;
+  if(tu && tu.input && tu.input.reply) return tu.input;
+  return parseReply(blocks.filter(c=>c.type==="text").map(c=>c.text).join(""));
 }
+const TUTOR_TOOL={
+  name:"tutor_turn",
+  description:"Your spoken reply to the learner plus written feedback on what he just said.",
+  input_schema:{type:"object",required:["reply","translation","corrections","better_version","pronunciation","praise","vocab"],
+    properties:{
+      reply:{type:"string",description:"Spoken reply in Italian only"},
+      translation:{type:"string",description:"English translation of reply"},
+      corrections:{type:"array",items:{type:"object",required:["original","corrected","explanation"],properties:{
+        original:{type:"string"},corrected:{type:"string"},explanation:{type:"string",description:"Short plain-English reason"}}}},
+      better_version:{type:"string",description:"Natural native version of his whole message, or empty"},
+      pronunciation:{type:"string",description:"Likely pronunciation issue and hint, or empty"},
+      praise:{type:"string",description:"Specific praise, or empty"},
+      vocab:{type:"array",items:{type:"object",required:["it","en"],properties:{it:{type:"string"},en:{type:"string"}}}}
+    }}
+};
+let lastToolId=null;
 function parseReply(raw){
   const a=raw.indexOf("{"), b=raw.lastIndexOf("}");
   if(a>=0&&b>a){ try{ return JSON.parse(raw.slice(a,b+1)); }catch{} }
+  // Last resort: pull out just the Italian reply rather than show raw JSON.
+  const m=raw.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if(m){ try{ return {reply:JSON.parse('"'+m[1]+'"'),translation:"",corrections:[]}; }catch{} }
   return {reply:raw.trim(),translation:"",corrections:[]};
 }
 async function send(text){
@@ -315,51 +340,68 @@ async function send(text){
 }
 function startConversation(){
   speechSynthesis && speechSynthesis.cancel();
-  convo=[]; chat.innerHTML="";
-  addSys("Scenario: "+scenarioText()+" · Tap 🎙 to talk, tap again to send.");
+  convo=[]; lastToolId=null; chat.innerHTML="";
+  addSys("Scenario: "+scenarioText()+" · Tap 🎙 to talk – take your time – tap again to send.");
   send("[START]");
 }
 
 /* ---------- speech recognition ---------- */
+// Keeps listening through pauses (restarting the recogniser when the browser
+// stops it) until Tim taps the mic again, or an optional long silence passes.
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let rec=null, listening=false, finalText="", interim="";
-function setMic(on){ listening=on; $("mic").classList.toggle("on",on); if(!on){ $("live").textContent=""; } }
-function showLive(){ $("live").textContent=(finalText+" "+interim).trim() || "Ascolto… (listening)"; }
+const isAndroid=/Android/i.test(navigator.userAgent);
+let rec=null, listening=false, finalText="", interim="", lastHeard=0, pauseTimer=null;
+function setMic(on){
+  listening=on; $("mic").classList.toggle("on",on);
+  clearInterval(pauseTimer); pauseTimer=null;
+  if(!on) $("live").textContent="";
+}
+function showLive(){
+  const t=(finalText+" "+interim).trim();
+  $("live").textContent = t ? t+"  · tap 🎙 to send" : "Ascolto… take your time, tap 🎙 when done";
+}
 function makeRec(){
-  const r=new SR(); r.lang="it-IT"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
+  const r=new SR(); r.lang="it-IT"; r.interimResults=true; r.maxAlternatives=1;
+  r.continuous=!isAndroid; // Android Chrome duplicates text in continuous mode
   r.onresult=e=>{
     interim="";
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
       if(e.results[i].isFinal) finalText=(finalText+" "+t).trim(); else interim+=t;
     }
-    showLive();
+    lastHeard=Date.now(); showLive();
   };
   r.onerror=e=>{
-    if(e.error==="not-allowed"||e.error==="service-not-allowed"){ setMic(false); addSys("Microphone blocked – allow it for this site in Chrome's settings.",true); }
+    if(e.error==="not-allowed"||e.error==="service-not-allowed"){ setMic(false); addSys("Microphone blocked – allow it for this site in the browser settings.",true); }
     else if(e.error!=="no-speech"&&e.error!=="aborted") addSys("Speech error: "+e.error,true);
   };
   r.onend=()=>{
     if(!listening) return;
-    // Android Chrome ends after a pause. Either send, or keep listening.
-    if(S.autoSend && finalText){ const t=finalText; finalText=""; interim=""; setMic(false); send(t); }
-    else { try{ r.start(); }catch{} }
+    // Browser stopped on a pause: keep what was half-heard and carry on listening.
+    if(interim){ finalText=(finalText+" "+interim).trim(); interim=""; }
+    setTimeout(()=>{ if(listening){ try{ r.start(); }catch{} } },150);
   };
   return r;
 }
+function finishSpeaking(){
+  const t=(finalText+" "+interim).trim(); finalText=""; interim="";
+  setMic(false); try{ rec.stop(); }catch{}
+  if(t) send(t);
+}
 $("mic").onclick=()=>{
-  if(!SR){ addSys("This browser has no speech recognition – use Chrome, or type with ⌨︎.",true); $("typebar").classList.add("open"); return; }
+  if(!SR){ addSys("This browser has no speech recognition – try Chrome or Safari, or type with ⌨︎.",true); $("typebar").classList.add("open"); return; }
   if(busy) return;
   if(!listening){
     speechSynthesis && speechSynthesis.cancel();
-    finalText=""; interim=""; rec=rec||makeRec();
+    finalText=""; interim=""; lastHeard=Date.now(); rec=rec||makeRec();
     setMic(true); showLive();
     try{ rec.start(); }catch{}
-  }else{
-    const t=(finalText+" "+interim).trim(); finalText=""; interim="";
-    setMic(false); try{ rec.stop(); }catch{}
-    if(t) send(t);
-  }
+    if(S.pauseSend>0){
+      pauseTimer=setInterval(()=>{
+        if(listening && (finalText||interim) && Date.now()-lastHeard > S.pauseSend*1000) finishSpeaking();
+      },500);
+    }
+  }else finishSpeaking();
 };
 
 /* ---------- typing + hint ---------- */
