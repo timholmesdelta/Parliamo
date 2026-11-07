@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f5132">
+<title>Parliamo – Italian speaking tutor</title>
+<style>
+  :root{
+    --bg:#f6f4ef; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --accent:#0f7a4a; --accent2:#c8102e;
+    --fix:#fff4e5; --fixb:#f0a63a; --line:#e3e0d8; --me:#e7f3ec;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#141413;--card:#1f1f1d;--ink:#eeece6;--muted:#a3a19a;--accent:#3fbf7f;--accent2:#ff5a6e;
+      --fix:#2d2618;--fixb:#c98a2b;--line:#33322f;--me:#1b3327;}
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  body{display:flex;flex-direction:column;height:100dvh}
+  header{display:flex;align-items:center;gap:.5rem;padding:calc(.6rem + env(safe-area-inset-top)) 1rem .6rem;
+    background:var(--accent);color:#fff}
+  header h1{font-size:1.1rem;margin:0;flex:1;font-weight:650}
+  header small{opacity:.85;font-weight:400}
+  .iconbtn{background:none;border:0;color:inherit;font-size:1.35rem;padding:.3rem .5rem;cursor:pointer;border-radius:.5rem}
+  #chat{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.8rem}
+  .msg{max-width:92%;padding:.7rem .85rem;border-radius:1rem;background:var(--card);border:1px solid var(--line)}
+  .msg.tutor{align-self:flex-start;border-top-left-radius:.25rem}
+  .msg.me{align-self:flex-end;background:var(--me);border-top-right-radius:.25rem}
+  .it{font-size:1.08rem}
+  .en{color:var(--muted);font-size:.9rem;margin-top:.35rem;display:none}
+  .show-en .en{display:block}
+  .row{display:flex;gap:.4rem;margin-top:.45rem;flex-wrap:wrap}
+  .chip{font-size:.8rem;border:1px solid var(--line);background:transparent;color:var(--ink);
+    padding:.25rem .6rem;border-radius:999px;cursor:pointer}
+  .fb{align-self:stretch;background:var(--fix);border:1px solid var(--fixb);border-radius:.8rem;padding:.65rem .85rem;font-size:.93rem}
+  .fb h3{margin:0 0 .35rem;font-size:.8rem;letter-spacing:.04em;text-transform:uppercase;color:var(--fixb)}
+  .fb ul{margin:.2rem 0 .5rem;padding-left:1.1rem}
+  .fb li{margin:.25rem 0}
+  .fb s{opacity:.7}
+  .fb b{color:var(--accent)}
+  .fb .good{color:var(--accent);font-weight:600}
+  .vocab{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.3rem}
+  .vocab span{background:var(--card);border:1px solid var(--line);border-radius:.4rem;padding:.1rem .45rem;font-size:.85rem}
+  .sys{align-self:center;color:var(--muted);font-size:.85rem;text-align:center}
+  .err{color:var(--accent2)}
+  footer{border-top:1px solid var(--line);background:var(--card);
+    padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom))}
+  #live{min-height:1.4em;color:var(--muted);font-style:italic;text-align:center;margin-bottom:.5rem;font-size:.95rem}
+  .controls{display:flex;align-items:center;justify-content:center;gap:1rem}
+  #mic{width:4.6rem;height:4.6rem;border-radius:50%;border:0;background:var(--accent);color:#fff;
+    font-size:1.9rem;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.2);touch-action:manipulation}
+  #mic.on{background:var(--accent2);animation:pulse 1.2s infinite}
+  #mic:disabled{opacity:.45}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(200,16,46,.5)}100%{box-shadow:0 0 0 18px rgba(200,16,46,0)}}
+  .side{width:3rem;height:3rem;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:1.2rem;cursor:pointer}
+  #typebar{display:none;gap:.5rem;margin-top:.6rem}
+  #typebar.open{display:flex}
+  #typebar input{flex:1;font:inherit;padding:.6rem .8rem;border-radius:.7rem;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  button.primary{background:var(--accent);color:#fff;border:0;border-radius:.7rem;padding:.6rem 1rem;font:inherit;font-weight:600;cursor:pointer}
+  /* settings */
+  #settings{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:10}
+  #settings.open{display:flex}
+  .sheet{background:var(--card);width:100%;max-width:34rem;max-height:92dvh;overflow-y:auto;border-radius:1.1rem 1.1rem 0 0;
+    padding:1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom))}
+  .sheet h2{margin:0 0 .8rem;font-size:1.15rem}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:.75rem 0 .25rem}
+  .sheet input,.sheet select,.sheet textarea{width:100%;font:inherit;padding:.55rem .7rem;border-radius:.6rem;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  .sheet textarea{min-height:4rem}
+  .check{display:flex;align-items:center;gap:.5rem;margin:.7rem 0;color:var(--ink);font-size:.95rem}
+  .check input{width:auto}
+  .note{font-size:.8rem;color:var(--muted);margin-top:.3rem}
+  .btnrow{display:flex;gap:.6rem;margin-top:1.1rem}
+  .btnrow button{flex:1}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:.7rem;padding:.6rem 1rem;font:inherit;cursor:pointer}
+  @media (min-width:48rem){ #chat{padding:1.5rem max(1.5rem,calc(50% - 24rem))} .msg{max-width:80%} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Parliamo <small id="hdrLevel"></small></h1>
+  <button class="iconbtn" id="btnEn" title="Show/hide English">EN</button>
+  <button class="iconbtn" id="btnSettings" title="Settings">⚙︎</button>
+</header>
+
+<main id="chat" aria-live="polite"></main>
+
+<footer>
+  <div id="live"></div>
+  <div class="controls">
+    <button class="side" id="btnType" title="Type instead">⌨︎</button>
+    <button id="mic" title="Tap to speak, tap again to send">🎙</button>
+    <button class="side" id="btnHint" title="Help me say something">?</button>
+  </div>
+  <div id="typebar">
+    <input id="typed" placeholder="Scrivi in italiano…" autocomplete="off">
+    <button class="primary" id="sendTyped">Invia</button>
+  </div>
+</footer>
+
+<div id="settings">
+  <div class="sheet">
+    <h2>Settings</h2>
+    <label for="apiKey">Anthropic API key</label>
+    <input id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+    <div class="note">Kept only in this browser on this phone. Get one at console.anthropic.com.</div>
+
+    <label for="level">Your level</label>
+    <select id="level">
+      <option value="A1">A1 – beginner</option>
+      <option value="A2" selected>A2 – elementary</option>
+      <option value="B1">B1 – intermediate</option>
+      <option value="B2">B2 – upper intermediate</option>
+      <option value="C1">C1 – advanced</option>
+    </select>
+
+    <label for="scenario">Conversation topic</label>
+    <select id="scenario">
+      <option>Free chat – getting to know each other</option>
+      <option>Ordering at a bar or restaurant</option>
+      <option>Viewing a house with an Italian estate agent</option>
+      <option>Talking to a builder about renovations</option>
+      <option>Checking in guests at a holiday let</option>
+      <option>Shopping at a market</option>
+      <option>Asking for directions and travel</option>
+      <option>At the doctor or pharmacy</option>
+      <option>Talking about work and my job</option>
+      <option value="custom">Custom…</option>
+    </select>
+    <textarea id="customScenario" placeholder="Describe the situation you want to practise" style="display:none;margin-top:.5rem"></textarea>
+
+    <label for="model">Tutor model</label>
+    <select id="model">
+      <option value="claude-sonnet-5-5" selected>Claude Sonnet 5.5 (recommended)</option>
+      <option value="claude-haiku-5-5">Claude Haiku 5.5 (fastest, cheapest)</option>
+      <option value="claude-opus-5-5">Claude Opus 5.5 (best feedback, slower)</option>
+    </select>
+
+    <label for="rate">Tutor speaking speed: <span id="rateVal"></span></label>
+    <input id="rate" type="range" min="0.6" max="1.2" step="0.05" value="0.9">
+
+    <label for="voice">Italian voice</label>
+    <select id="voice"></select>
+
+    <div class="check"><input type="checkbox" id="autoSpeak" checked><span>Speak replies automatically</span></div>
+    <div class="check"><input type="checkbox" id="autoSend" checked><span>Send as soon as I stop talking</span></div>
+
+    <div class="btnrow">
+      <button class="ghost" id="btnNew">New conversation</button>
+      <button class="primary" id="btnClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem("parliamo."+k); return v===null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("parliamo."+k, JSON.stringify(v)); }catch{} }
+};
+
+/* ---------- settings ---------- */
+const S = {
+  apiKey: store.get("apiKey",""), level: store.get("level","A2"),
+  scenario: store.get("scenario","Free chat – getting to know each other"),
+  customScenario: store.get("customScenario",""), model: store.get("model","claude-sonnet-5-5"),
+  rate: store.get("rate",0.9), voice: store.get("voice",""),
+  autoSpeak: store.get("autoSpeak",true), autoSend: store.get("autoSend",true), showEn: store.get("showEn",false)
+};
+function loadSettingsUI(){
+  $("apiKey").value=S.apiKey; $("level").value=S.level; $("model").value=S.model;
+  $("scenario").value = [...$("scenario").options].some(o=>o.value===S.scenario) ? S.scenario : "custom";
+  $("customScenario").value=S.customScenario;
+  $("customScenario").style.display = $("scenario").value==="custom" ? "block" : "none";
+  $("rate").value=S.rate; $("rateVal").textContent=S.rate+"×";
+  $("autoSpeak").checked=S.autoSpeak; $("autoSend").checked=S.autoSend;
+  $("hdrLevel").textContent="· "+S.level;
+  document.body.classList.toggle("show-en", S.showEn);
+}
+function saveSettingsUI(){
+  S.apiKey=$("apiKey").value.trim(); S.level=$("level").value; S.model=$("model").value;
+  S.scenario=$("scenario").value; S.customScenario=$("customScenario").value.trim();
+  S.rate=parseFloat($("rate").value); S.voice=$("voice").value;
+  S.autoSpeak=$("autoSpeak").checked; S.autoSend=$("autoSend").checked;
+  for(const k of Object.keys(S)) store.set(k,S[k]);
+  $("hdrLevel").textContent="· "+S.level;
+}
+$("scenario").onchange=()=>{ $("customScenario").style.display = $("scenario").value==="custom" ? "block":"none"; };
+$("rate").oninput=()=>{ $("rateVal").textContent=$("rate").value+"×"; };
+$("btnSettings").onclick=()=>{ loadSettingsUI(); fillVoices(); $("settings").classList.add("open"); };
+$("btnClose").onclick=()=>{ saveSettingsUI(); $("settings").classList.remove("open"); if(!convo.length) startConversation(); };
+$("btnNew").onclick=()=>{ saveSettingsUI(); $("settings").classList.remove("open"); startConversation(); };
+$("settings").onclick=e=>{ if(e.target.id==="settings") $("btnClose").click(); };
+$("btnEn").onclick=()=>{ S.showEn=!S.showEn; store.set("showEn",S.showEn); document.body.classList.toggle("show-en",S.showEn); };
+
+/* ---------- text to speech ---------- */
+let voices=[];
+function italianVoices(){ return speechSynthesis.getVoices().filter(v=>/^it([-_]|$)/i.test(v.lang)); }
+function fillVoices(){
+  voices=italianVoices();
+  const sel=$("voice"); sel.innerHTML="";
+  if(!voices.length){ sel.innerHTML='<option value="">Default (no Italian voice found)</option>'; return; }
+  for(const v of voices){ const o=document.createElement("option"); o.value=v.name; o.textContent=v.name+" ("+v.lang+")"; sel.appendChild(o); }
+  sel.value = voices.some(v=>v.name===S.voice) ? S.voice : (voices.find(v=>/google/i.test(v.name))||voices[0]).name;
+}
+if("speechSynthesis" in window){ speechSynthesis.onvoiceschanged=fillVoices; fillVoices(); }
+function speak(text, slow){
+  if(!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang="it-IT";
+  const v=italianVoices().find(v=>v.name===S.voice) || italianVoices()[0];
+  if(v) u.voice=v;
+  u.rate = slow ? Math.max(0.5,S.rate-0.25) : S.rate;
+  speechSynthesis.speak(u);
+}
+
+/* ---------- chat rendering ---------- */
+const chat=$("chat");
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function scrollDown(){ chat.scrollTop=chat.scrollHeight; }
+function addSys(text, isErr){ const d=document.createElement("div"); d.className="sys"+(isErr?" err":""); d.textContent=text; chat.appendChild(d); scrollDown(); return d; }
+function addMe(text){ const d=document.createElement("div"); d.className="msg me"; d.innerHTML='<div class="it">'+esc(text)+'</div>'; chat.appendChild(d); scrollDown(); }
+function addFeedback(r){
+  const fixes=(r.corrections||[]).filter(c=>c&&c.corrected);
+  const hasAny = fixes.length || r.better_version || r.pronunciation || r.praise;
+  if(!hasAny) return;
+  const d=document.createElement("div"); d.className="fb";
+  let h='<h3>Feedback</h3>';
+  if(r.praise) h+='<div class="good">'+esc(r.praise)+'</div>';
+  if(fixes.length){
+    h+='<ul>'+fixes.map(c=>'<li><s>'+esc(c.original)+'</s> → <b>'+esc(c.corrected)+'</b><br>'+esc(c.explanation)+'</li>').join("")+'</ul>';
+  }
+  if(r.better_version){
+    h+='<div>More natural: <b>'+esc(r.better_version)+'</b></div>'+
+       '<div class="row"><button class="chip" data-say="'+esc(r.better_version)+'">🔊 Hear it</button></div>';
+  }
+  if(r.pronunciation) h+='<div style="margin-top:.45rem">🗣 '+esc(r.pronunciation)+'</div>';
+  d.innerHTML=h; chat.appendChild(d); scrollDown();
+}
+function addTutor(r){
+  const d=document.createElement("div"); d.className="msg tutor";
+  let h='<div class="it">'+esc(r.reply)+'</div><div class="en">'+esc(r.translation)+'</div>';
+  if(r.vocab && r.vocab.length) h+='<div class="vocab en">'+r.vocab.map(v=>'<span><b>'+esc(v.it)+'</b> – '+esc(v.en)+'</span>').join("")+'</div>';
+  h+='<div class="row"><button class="chip" data-say="'+esc(r.reply)+'">🔊 Replay</button>'+
+     '<button class="chip" data-slow="'+esc(r.reply)+'">🐢 Slower</button>'+
+     '<button class="chip" data-toggle="1">EN</button></div>';
+  d.innerHTML=h; chat.appendChild(d); scrollDown();
+}
+chat.addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.say) speak(b.dataset.say,false);
+  else if(b.dataset.slow) speak(b.dataset.slow,true);
+  else if(b.dataset.toggle){ const m=b.closest(".msg"); m.classList.toggle("show-en"); }
+});
+
+/* ---------- Claude ---------- */
+let convo=[]; // {role, content}
+let busy=false;
+function scenarioText(){ return S.scenario==="custom" ? (S.customScenario||"Free conversation") : S.scenario; }
+function systemPrompt(){
+  return `You are a warm, patient Italian conversation tutor for Tim, a British English speaker from the UK. His level is ${S.level} (CEFR).
+Practice scenario: ${scenarioText()}. Play the other person in the scenario naturally (e.g. the waiter, the estate agent), or be a friendly Italian conversation partner for free chat.
+
+Each learner message is an automatic speech-recognition transcript of Tim speaking Italian. Ignore punctuation and capitalisation. Recognition may mishear: if a word looks like a mis-hearing of a similar Italian word, assume he meant the plausible word, and mention it under "pronunciation" as a likely pronunciation issue with a short hint on how to say it.
+
+Reply ONLY with a single JSON object, no markdown, in exactly this shape:
+{"reply": "your spoken reply in Italian: 1-3 short sentences pitched at ${S.level}, natural spoken Italian, usually ending with a question so he keeps talking. Never put corrections in here.",
+ "translation": "English translation of reply",
+ "corrections": [{"original": "what he said", "corrected": "correct Italian", "explanation": "short, plain-English reason (grammar, gender, verb form, word choice)"}],
+ "better_version": "how a native speaker would naturally say his whole message, or empty string if it was already natural",
+ "pronunciation": "likely pronunciation issue and hint, or empty string",
+ "praise": "a few words of specific praise if he used something well, else empty string",
+ "vocab": [{"it": "word or phrase", "en": "meaning"}]}
+
+Rules: corrections only for real errors (max 3, most important first); empty array if none. vocab: up to 3 words from your reply that may be new at his level. If he speaks English or is stuck, give the Italian he needs inside "better_version", then continue in Italian. For the first turn (message "[START]") there is nothing to correct: just open the scenario in character.`;
+}
+async function callClaude(userText){
+  if(!S.apiKey){ addSys("Add your Anthropic API key in Settings ⚙︎ to start.",true); $("btnSettings").click(); return null; }
+  convo.push({role:"user",content:userText});
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"content-type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01",
+             "anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:S.model,max_tokens:900,system:systemPrompt(),messages:convo})
+  });
+  if(!res.ok){
+    convo.pop();
+    let msg=res.status+" "+res.statusText;
+    try{ const j=await res.json(); if(j.error&&j.error.message) msg=j.error.message; }catch{}
+    throw new Error(msg);
+  }
+  const j=await res.json();
+  const raw=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("");
+  convo.push({role:"assistant",content:raw});
+  return parseReply(raw);
+}
+function parseReply(raw){
+  const a=raw.indexOf("{"), b=raw.lastIndexOf("}");
+  if(a>=0&&b>a){ try{ return JSON.parse(raw.slice(a,b+1)); }catch{} }
+  return {reply:raw.trim(),translation:"",corrections:[]};
+}
+async function send(text){
+  text=(text||"").trim(); if(!text||busy) return;
+  busy=true; setMic(false); $("mic").disabled=true;
+  if(text!=="[START]") addMe(text);
+  const wait=addSys("…");
+  try{
+    const r=await callClaude(text);
+    wait.remove();
+    if(r){ addFeedback(r); addTutor(r); if(S.autoSpeak) speak(r.reply); }
+  }catch(err){ wait.remove(); addSys("Couldn't reach the tutor: "+err.message,true); }
+  busy=false; $("mic").disabled=false;
+}
+function startConversation(){
+  speechSynthesis && speechSynthesis.cancel();
+  convo=[]; chat.innerHTML="";
+  addSys("Scenario: "+scenarioText()+" · Tap 🎙 to talk, tap again to send.");
+  send("[START]");
+}
+
+/* ---------- speech recognition ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null, listening=false, finalText="", interim="";
+function setMic(on){ listening=on; $("mic").classList.toggle("on",on); if(!on){ $("live").textContent=""; } }
+function showLive(){ $("live").textContent=(finalText+" "+interim).trim() || "Ascolto… (listening)"; }
+function makeRec(){
+  const r=new SR(); r.lang="it-IT"; r.interimResults=true; r.continuous=false; r.maxAlternatives=1;
+  r.onresult=e=>{
+    interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText=(finalText+" "+t).trim(); else interim+=t;
+    }
+    showLive();
+  };
+  r.onerror=e=>{
+    if(e.error==="not-allowed"||e.error==="service-not-allowed"){ setMic(false); addSys("Microphone blocked – allow it for this site in Chrome's settings.",true); }
+    else if(e.error!=="no-speech"&&e.error!=="aborted") addSys("Speech error: "+e.error,true);
+  };
+  r.onend=()=>{
+    if(!listening) return;
+    // Android Chrome ends after a pause. Either send, or keep listening.
+    if(S.autoSend && finalText){ const t=finalText; finalText=""; interim=""; setMic(false); send(t); }
+    else { try{ r.start(); }catch{} }
+  };
+  return r;
+}
+$("mic").onclick=()=>{
+  if(!SR){ addSys("This browser has no speech recognition – use Chrome, or type with ⌨︎.",true); $("typebar").classList.add("open"); return; }
+  if(busy) return;
+  if(!listening){
+    speechSynthesis && speechSynthesis.cancel();
+    finalText=""; interim=""; rec=rec||makeRec();
+    setMic(true); showLive();
+    try{ rec.start(); }catch{}
+  }else{
+    const t=(finalText+" "+interim).trim(); finalText=""; interim="";
+    setMic(false); try{ rec.stop(); }catch{}
+    if(t) send(t);
+  }
+};
+
+/* ---------- typing + hint ---------- */
+$("btnType").onclick=()=>{ $("typebar").classList.toggle("open"); if($("typebar").classList.contains("open")) $("typed").focus(); };
+$("sendTyped").onclick=()=>{ const t=$("typed").value; $("typed").value=""; send(t); };
+$("typed").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); $("sendTyped").click(); } };
+$("btnHint").onclick=()=>{ if(convo.length) send("(In English) I'm not sure how to answer. Give me an example answer I could say in Italian, then ask me again."); };
+
+/* ---------- boot ---------- */
+loadSettingsUI();
+if(!S.apiKey){ addSys("Welcome! Open Settings ⚙︎, paste your Anthropic API key, choose a level and topic, then tap Done."); }
+else startConversation();
+</script>
+</body>
+</html>
