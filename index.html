@@ -286,7 +286,7 @@ async function callClaude(userText){
     headers:{"content-type":"application/json","x-api-key":S.apiKey,"anthropic-version":"2023-06-01",
              "anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:S.model,max_tokens:1500,system:systemPrompt(),messages:convo,
-      tools:[TUTOR_TOOL],tool_choice:{type:"tool",name:"tutor_turn"}})
+      tools:[TUTOR_TOOL],tool_choice:{type:"auto"}})
   });
   if(!res.ok){
     convo.pop();
