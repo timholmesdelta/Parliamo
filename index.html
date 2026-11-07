@@ -226,22 +226,27 @@ const chat=$("chat");
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function scrollDown(){ chat.scrollTop=chat.scrollHeight; }
 function addSys(text, isErr){ const d=document.createElement("div"); d.className="sys"+(isErr?" err":""); d.textContent=text; chat.appendChild(d); scrollDown(); return d; }
-function addMe(text){ const d=document.createElement("div"); d.className="msg me"; d.innerHTML='<div class="it">'+esc(text)+'</div>'; chat.appendChild(d); scrollDown(); }
-function addFeedback(r){
+function addMe(text, label){
+  const d=document.createElement("div"); d.className="msg me";
+  d.innerHTML=(label?'<div class="en" style="display:block;margin:0 0 .2rem">'+esc(label)+'</div>':'')+'<div class="it">'+esc(text)+'</div>';
+  chat.appendChild(d); scrollDown();
+}
+function addFeedback(r, said){
   const fixes=(r.corrections||[]).filter(c=>c&&c.corrected);
   const hasAny = fixes.length || r.better_version || r.pronunciation || r.praise;
-  if(!hasAny) return;
+  if(!hasAny && !said) return;
   const d=document.createElement("div"); d.className="fb";
   let h='<h3>Feedback</h3>';
+  if(!hasAny) h+='<div class="good">No corrections – nicely said.</div>';
   if(r.praise) h+='<div class="good">'+esc(r.praise)+'</div>';
   if(fixes.length){
     h+='<ul>'+fixes.map(c=>'<li><s>'+esc(c.original)+'</s> → <b>'+esc(c.corrected)+'</b><br>'+esc(c.explanation)+'</li>').join("")+'</ul>';
   }
-  if(r.better_version){
-    h+='<div>More natural: <b>'+esc(r.better_version)+'</b></div>'+
-       '<div class="row"><button class="chip" data-say="'+esc(r.better_version)+'">🔊 Hear it</button></div>';
-  }
+  if(r.better_version) h+='<div>More natural: <b>'+esc(r.better_version)+'</b></div>';
   if(r.pronunciation) h+='<div style="margin-top:.45rem">🗣 '+esc(r.pronunciation)+'</div>';
+  h+='<div class="row">'+
+     (r.better_version?'<button class="chip" data-say="'+esc(r.better_version)+'">🔊 Hear it</button>':'')+
+     (said?'<button class="chip" data-meant="'+esc(said)+'">✏️ What I meant</button>':'')+'</div>';
   d.innerHTML=h; chat.appendChild(d); scrollDown();
 }
 function addTutor(r){
@@ -253,11 +258,31 @@ function addTutor(r){
      '<button class="chip" data-toggle="1">EN</button></div>';
   d.innerHTML=h; chat.appendChild(d); scrollDown();
 }
+function openMeant(btn){
+  const card=btn.closest(".fb");
+  if(card.querySelector(".meant")) { card.querySelector(".meant input").focus(); return; }
+  const f=document.createElement("div"); f.className="meant";
+  f.style.cssText="display:flex;gap:.4rem;margin-top:.6rem";
+  f.innerHTML='<input placeholder="In English, what I was trying to say…" style="flex:1;font:inherit;padding:.5rem .7rem;border-radius:.6rem;border:1px solid var(--line);background:var(--bg);color:var(--ink)">'+
+              '<button class="primary" style="padding:.5rem .8rem">Send</button>';
+  card.appendChild(f);
+  const inp=f.querySelector("input"), go=f.querySelector("button");
+  const submit=()=>{
+    const meant=inp.value.trim(); if(!meant||busy) return;
+    f.remove(); btn.remove();
+    send(`[CLARIFICATION] When I said "${btn.dataset.meant}" I was actually trying to say (in English): "${meant}". Redo the feedback on that attempt based on what I meant, then carry on the conversation from what I meant.`,
+         meant, "What I meant:", btn.dataset.meant);
+  };
+  go.onclick=submit;
+  inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); submit(); } };
+  inp.focus(); scrollDown();
+}
 chat.addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return;
   if(b.dataset.say) speak(b.dataset.say,false);
   else if(b.dataset.slow) speak(b.dataset.slow,true);
   else if(b.dataset.toggle){ const m=b.closest(".msg"); m.classList.toggle("show-en"); }
+  else if(b.dataset.meant!==undefined) openMeant(b);
 });
 
 /* ---------- Claude ---------- */
@@ -272,7 +297,7 @@ Each learner message is an automatic speech-recognition transcript of Tim speaki
 
 Always answer by calling the tutor_turn tool, never with plain text. "reply" is your spoken Italian: 1-3 short sentences pitched at ${S.level}, usually ending with a question so he keeps talking, and never containing corrections.
 
-Rules: corrections only for real errors (max 3, most important first); empty array if none. vocab: up to 3 words from your reply that may be new at his level. If he speaks English or is stuck, give the Italian he needs inside "better_version", then continue in Italian. For the first turn (message "[START]") there is nothing to correct: just open the scenario in character.`;
+Rules: corrections only for real errors (max 3, most important first); empty array if none. vocab: up to 3 words from your reply that may be new at his level. If he speaks English or is stuck, give the Italian he needs inside "better_version", then continue in Italian. For the first turn (message "[START]") there is nothing to correct: just open the scenario in character.\n\nA message starting [CLARIFICATION] means he is telling you in English what he was really trying to say in an earlier attempt. Redo the feedback for that attempt against his intended meaning: "corrections" compare his words with how to say what he meant, and "better_version" is the natural Italian for what he meant. "reply" then responds in character to what he actually meant, picking the conversation back up from there.`;
 }
 async function callClaude(userText){
   if(!S.apiKey){ addSys("Add your Anthropic API key in Settings ⚙︎ to start.",true); $("btnSettings").click(); return null; }
@@ -326,15 +351,18 @@ function parseReply(raw){
   if(m){ try{ return {reply:JSON.parse('"'+m[1]+'"'),translation:"",corrections:[]}; }catch{} }
   return {reply:raw.trim(),translation:"",corrections:[]};
 }
-async function send(text){
+async function send(text, display, label, attempt){
+  // display/label: what to show in my bubble; attempt: my Italian the feedback is about
   text=(text||"").trim(); if(!text||busy) return;
+  const isStart = text==="[START]", isHint = text.startsWith("(In English)");
+  if(attempt===undefined) attempt = (isStart||isHint) ? null : text;
   busy=true; setMic(false); $("mic").disabled=true;
-  if(text!=="[START]") addMe(text);
+  if(!isStart) addMe(display||text, label);
   const wait=addSys("…");
   try{
     const r=await callClaude(text);
     wait.remove();
-    if(r){ addFeedback(r); addTutor(r); if(S.autoSpeak) speak(r.reply); }
+    if(r){ addFeedback(r, attempt); addTutor(r); if(S.autoSpeak) speak(r.reply); }
   }catch(err){ wait.remove(); addSys("Couldn't reach the tutor: "+err.message,true); }
   busy=false; $("mic").disabled=false;
 }
@@ -364,6 +392,7 @@ function makeRec(){
   const r=new SR(); r.lang="it-IT"; r.interimResults=true; r.maxAlternatives=1;
   r.continuous=!isAndroid; // Android Chrome duplicates text in continuous mode
   r.onresult=e=>{
+    if(!listening) return; // late result after send – ignore
     interim="";
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
