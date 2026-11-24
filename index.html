@@ -293,7 +293,7 @@ function systemPrompt(){
   return `You are a warm, patient Italian conversation tutor for Tim, a British English speaker from the UK. His level is ${S.level} (CEFR).
 Practice scenario: ${scenarioText()}. Play the other person in the scenario naturally (e.g. the waiter, the estate agent), or be a friendly Italian conversation partner for free chat.
 
-Each learner message is an automatic speech-recognition transcript of Tim speaking Italian. Ignore punctuation and capitalisation. Recognition may mishear: if a word looks like a mis-hearing of a similar Italian word, assume he meant the plausible word, and mention it under "pronunciation" as a likely pronunciation issue with a short hint on how to say it.
+Each learner message is an automatic speech-recognition transcript of Tim speaking Italian. It is speech, not writing: NEVER correct or comment on punctuation, capital letters, full stops, commas or sentence boundaries, and never count a run-on as an error. A " / " in the transcript marks where he paused: treat it as a likely sentence or clause break, though it may just be hesitation, and never correct anything because of it. Leave " / " out of corrections and better_version. Recognition may mishear: if a word looks like a mis-hearing of a similar Italian word, assume he meant the plausible word, and mention it under "pronunciation" as a likely pronunciation issue with a short hint on how to say it.
 
 Always answer by calling the tutor_turn tool, never with plain text. "reply" is your spoken Italian: 1-3 short sentences pitched at ${S.level}, usually ending with a question so he keeps talking, and never containing corrections.
 
@@ -378,6 +378,7 @@ function startConversation(){
 // stops it) until Tim taps the mic again, or an optional long silence passes.
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const isAndroid=/Android/i.test(navigator.userAgent);
+const PAUSE_MS=900; let pauses=[]; // word positions where Tim paused
 let discarding=false, rec=null, listening=false, finalText="", interim="", lastHeard=0, pauseTimer=null;
 function setMic(on){
   listening=on; $("mic").classList.toggle("on",on);
@@ -388,20 +389,29 @@ function setMic(on){
   if(!on) $("live").textContent="";
 }
 function showLive(){
-  const t=(finalText+" "+interim).trim();
+  const t=withPauses(finalText+" "+interim);
   $("live").textContent = t ? t+"  · tap 🎙 to send" : "Ascolto… take your time, tap 🎙 when done";
+}
+function words(t){ return t.trim().split(/\s+/).filter(Boolean); }
+function markPause(t){ const n=words(t).length; if(n>0 && !pauses.includes(n)) pauses.push(n); }
+function withPauses(t){
+  const w=words(t), out=[];
+  w.forEach((x,i)=>{ out.push(x); if(pauses.includes(i+1) && i+1<w.length) out.push("/"); });
+  return out.join(" ");
 }
 function makeRec(){
   const r=new SR(); r.lang="it-IT"; r.interimResults=true; r.maxAlternatives=1;
   r.continuous=!isAndroid; // Android Chrome duplicates text in continuous mode
   r.onresult=e=>{
     if(!listening) return; // late result after send – ignore
+    const now=Date.now();
+    if(now-lastHeard>PAUSE_MS) markPause(finalText+" "+interim);
     interim="";
     for(let i=e.resultIndex;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
       if(e.results[i].isFinal) finalText=(finalText+" "+t).trim(); else interim+=t;
     }
-    lastHeard=Date.now(); showLive();
+    lastHeard=now; showLive();
   };
   r.onerror=e=>{
     if(e.error==="not-allowed"||e.error==="service-not-allowed"){ setMic(false); addSys("Microphone blocked – allow it for this site in the browser settings.",true); }
@@ -410,14 +420,15 @@ function makeRec(){
   r.onend=()=>{
     if(!listening) return;
     // Browser stopped on a pause: keep what was half-heard and carry on listening.
-    if(discarding){ discarding=false; finalText=""; interim=""; showLive(); }
+    if(discarding){ discarding=false; finalText=""; interim=""; pauses=[]; showLive(); }
     else if(interim){ finalText=(finalText+" "+interim).trim(); interim=""; }
+    markPause(finalText); // the browser stopping also means a pause
     setTimeout(()=>{ if(listening){ try{ r.start(); }catch{} } },150);
   };
   return r;
 }
 function finishSpeaking(){
-  const t=(finalText+" "+interim).trim(); finalText=""; interim="";
+  const t=withPauses(finalText+" "+interim); finalText=""; interim=""; pauses=[];
   setMic(false); try{ rec.stop(); }catch{}
   if(t) send(t);
 }
@@ -426,7 +437,7 @@ $("mic").onclick=()=>{
   if(busy) return;
   if(!listening){
     speechSynthesis && speechSynthesis.cancel();
-    finalText=""; interim=""; lastHeard=Date.now(); rec=rec||makeRec();
+    finalText=""; interim=""; pauses=[]; lastHeard=Date.now(); rec=rec||makeRec();
     setMic(true); showLive();
     try{ rec.start(); }catch{}
     if(S.pauseSend>0){
@@ -443,7 +454,7 @@ $("sendTyped").onclick=()=>{ const t=$("typed").value; $("typed").value=""; send
 $("typed").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); $("sendTyped").click(); } };
 $("btnHint").onclick=()=>{
   if(listening){ // start again: drop what's been heard, keep listening
-    finalText=""; interim=""; lastHeard=Date.now(); discarding=true; showLive();
+    finalText=""; interim=""; pauses=[]; lastHeard=Date.now(); discarding=true; showLive();
     try{ rec.abort(); }catch{ discarding=false; }
     return;
   }
